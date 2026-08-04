@@ -1,76 +1,118 @@
-// Package secret provides a masked string type for passwords, tokens and other
-// sensitive values. A struct or config that carries a Secret never leaks it when
-// formatted, logged, or serialized; the real value is obtained only through an
-// explicit Reveal call.
+// Package secret provides an opaque, masked value for passwords, tokens and
+// other sensitive strings. Secret protects against accidental disclosure
+// through ordinary formatting, logging and standard serialization; the real
+// value is obtained only through an explicit Reveal call.
 //
 // The package has no external dependencies, so infrastructure libraries can use
-// Secret in their (source-agnostic) Config structs without pulling in a config
-// or env-parsing dependency.
+// Secret in source-agnostic config structs without pulling in a configuration or
+// environment-parsing stack.
 package secret
 
-import "log/slog"
+import (
+	"encoding/xml"
+	"fmt"
+	"io"
+	"log/slog"
+	"strconv"
+)
 
-// mask is the placeholder shown in every textual representation of a non-empty
-// Secret.
+// mask is the placeholder shown for every non-empty Secret.
 const mask = "****"
 
-// Secret is a sensitive string that masks itself everywhere it could be exposed:
-// fmt verbs (%v/%s/%+v/%#v), encoding/json and encoding/text (via MarshalText),
-// and log/slog (via LogValue). An empty Secret renders as empty.
-//
-// The underlying value is retrieved only with Reveal, which makes every real use
-// greppable.
-type Secret string
-
-// Reveal returns the underlying secret value. Call it only where the real value
-// is genuinely required (e.g. building a connection); never log the result.
-func (s Secret) Reveal() string {
-	return string(s)
+// Value is a sealed marker for sensitive value types owned by this package.
+// Other packages can recognize these values, but cannot add implementations
+// because the marker method is intentionally unexported.
+type Value interface {
+	isSecret()
 }
 
-// String masks the value for fmt %v/%s and any fmt.Stringer consumer.
+// Secret is an opaque sensitive string. Its zero value is an empty secret.
+//
+// Secret masks itself during formatting, logging and text serialization. Its
+// contents cannot be accessed through ordinary string operations; use Reveal
+// explicitly at the point where the underlying value is genuinely required.
+type Secret struct {
+	value string
+}
+
+var _ Value = Secret{}
+
+// New returns a Secret containing value.
+func New(value string) Secret {
+	return Secret{value: value}
+}
+
+func (Secret) isSecret() {}
+
+// Reveal returns the underlying value. Call it only where the real secret is
+// required, and never log or serialize the returned string.
+func (s Secret) Reveal() string {
+	return s.value
+}
+
+// IsZero reports whether s is empty.
+func (s Secret) IsZero() bool {
+	return len(s.value) == 0
+}
+
+// Clear logically empties s. It does not guarantee physical erasure of prior
+// string data from process memory.
+func (s *Secret) Clear() {
+	if s != nil {
+		s.value = ""
+	}
+}
+
+// String returns an empty string for an empty Secret and a mask otherwise.
 func (s Secret) String() string {
-	if len(s) == 0 {
+	return s.masked()
+}
+
+// GoString returns a masked Go-syntax representation.
+func (s Secret) GoString() string {
+	return strconv.Quote(s.masked())
+}
+
+// Format masks Secret for fmt value verbs. Type and pointer verbs remain safe:
+// fmt handles %T and pointer %p itself without exposing the contents.
+func (s Secret) Format(state fmt.State, verb rune) {
+	value := s.masked()
+	if verb == 'q' {
+		value = strconv.Quote(value)
+	}
+
+	_, _ = io.WriteString(state, value)
+}
+
+// MarshalText returns an empty value for an empty Secret and a mask otherwise.
+// Serializing a Secret is intentionally lossy and never exposes its contents.
+func (s Secret) MarshalText() ([]byte, error) {
+	return []byte(s.masked()), nil
+}
+
+// MarshalXML writes only the masked representation.
+func (s Secret) MarshalXML(encoder *xml.Encoder, start xml.StartElement) error {
+	return encoder.EncodeElement(s.masked(), start)
+}
+
+// LogValue returns a masked slog value.
+func (s Secret) LogValue() slog.Value {
+	return slog.StringValue(s.masked())
+}
+
+// UnmarshalText replaces s with the supplied input. It enables environment and
+// text decoders to populate a Secret while all outward representations remain
+// masked.
+func (s *Secret) UnmarshalText(text []byte) error {
+	s.value = string(text)
+
+	return nil
+}
+
+func (s Secret) masked() string {
+	if s.IsZero() {
 		return ""
 	}
 
 	return mask
-}
-
-// GoString masks the value for fmt %#v.
-func (s Secret) GoString() string {
-	if len(s) == 0 {
-		return `""`
-	}
-
-	return `"` + mask + `"`
-}
-
-// MarshalText masks the value for encoding/json, TOML and any other
-// encoding.TextMarshaler-based encoder, so serializing a struct never leaks it.
-func (s Secret) MarshalText() ([]byte, error) {
-	if len(s) == 0 {
-		return []byte{}, nil
-	}
-
-	return []byte(mask), nil
-}
-
-// LogValue masks the value for log/slog structured logging.
-func (s Secret) LogValue() slog.Value {
-	if len(s) == 0 {
-		return slog.StringValue("")
-	}
-
-	return slog.StringValue(mask)
-}
-
-// UnmarshalText fills the Secret with the raw bytes, so an env or text decoder
-// (for example a config loader reading a value out of the environment) can set
-// it. It is deliberately asymmetric with MarshalText: the real value is read in
-// here, while every outward representation stays masked.
-func (s *Secret) UnmarshalText(text []byte) error {
-	*s = Secret(text)
-
-	return nil
 }
