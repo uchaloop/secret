@@ -2,20 +2,13 @@
 
 [![CI](https://github.com/uchaloop/secret/actions/workflows/ci.yml/badge.svg)](https://github.com/uchaloop/secret/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/uchaloop/secret/v2.svg)](https://pkg.go.dev/github.com/uchaloop/secret/v2)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/github/license/uchaloop/secret)](LICENSE)
 
-`secret` provides an opaque value for passwords, tokens and other sensitive
-strings. It protects against accidental disclosure through ordinary formatting,
-logging and standard serialization. Access to the underlying string is explicit
-through `Reveal`.
+An opaque value for passwords, tokens, and other sensitive strings. It masks
+values during formatting, structured logging, and serialization while keeping
+access to the original string explicit.
 
-The module uses only the Go standard library, so infrastructure libraries can
-put `secret.Secret` in their config types without depending on a configuration
-or environment-loading stack.
-
-## Install
-
-Version 2 uses the `/v2` module path:
+## Installation
 
 ```bash
 go get github.com/uchaloop/secret/v2
@@ -25,41 +18,19 @@ go get github.com/uchaloop/secret/v2
 import "github.com/uchaloop/secret/v2"
 ```
 
-The imported package name remains `secret`.
-
 ## Usage
 
 ```go
-package postgres
+password := secret.New(raw)
 
-import (
-	"encoding/json"
-	"fmt"
-	"log/slog"
+fmt.Println(password)                  // ****
+slog.Info("config", "password", password) // password=****
 
-	"github.com/uchaloop/secret/v2"
-)
-
-type Config struct {
-	User     string
-	Password secret.Secret
-}
-
-func Example(raw string) {
-	cfg := Config{
-		User:     "app",
-		Password: secret.New(raw),
-	}
-
-	fmt.Printf("%+v\n", cfg)  // {User:app Password:****}
-	slog.Info("config", "value", cfg)
-	data, _ := json.Marshal(cfg) // {"User":"app","Password":"****"}
-	_ = data
-
-	password := cfg.Password.Reveal()
-	_ = password // pass it only to the component that needs the real value
-}
+raw = password.Reveal()
 ```
+
+`Reveal` returns the original string. Keep the returned value scoped to the
+component that needs it and do not log or serialize it.
 
 The zero value is ready to use:
 
@@ -70,10 +41,9 @@ password.IsZero() // true
 password.String() // ""
 ```
 
-## Configuration decoding
+## Configuration
 
-`Secret` implements `encoding.TextUnmarshaler`, allowing environment and text
-decoders to populate it without knowing its internal representation:
+`Secret` can be populated by environment and text decoders:
 
 ```go
 type Config struct {
@@ -81,23 +51,39 @@ type Config struct {
 }
 ```
 
-The tag has no meaning to the `secret` package itself. Source selection and
-required-field validation remain the responsibility of the configuration
-library.
-
-## API
-
-### Create and access
+With `confmaker`, keep secrets out of TOML:
 
 ```go
-password := secret.New(raw)
-raw = password.Reveal()
+type Config struct {
+	Password secret.Secret `koanf:"-" env:"PASSWORD,required"`
+}
 ```
 
-`Reveal` is intentionally explicit so uses of the real value are easy to find
-during review. Do not log or serialize the returned string.
+## Masking
 
-### Check and clear
+A non-empty `Secret` is rendered as `****`; an empty value is rendered as an
+empty string. Masking is supported for:
+
+- `fmt` formatting;
+- `log/slog`;
+- text and JSON serialization;
+- XML serialization.
+
+```go
+cfg := struct {
+	Password secret.Secret `json:"password"`
+}{
+	Password: secret.New("sensitive"),
+}
+
+data, err := json.Marshal(cfg)
+// {"password":"****"}
+```
+
+Serialization is intentionally lossy and cannot be used to persist a
+recoverable secret.
+
+## Check and clear
 
 ```go
 if password.IsZero() {
@@ -107,83 +93,51 @@ if password.IsZero() {
 password.Clear()
 ```
 
-`Clear` logically replaces the stored value with an empty string. Go strings,
-garbage collection and compiler optimizations mean it cannot guarantee physical
-erasure of previous bytes from process memory.
+`Clear` replaces the stored value with an empty string. It cannot guarantee
+physical erasure of previous bytes from process memory.
 
-### Formatting, logging and serialization
+## Sensitive value marker
 
-A non-empty `Secret` renders as `****`; an empty one renders as an empty string.
-Masking is implemented for:
-
-- `fmt` value verbs through `fmt.Formatter`, `String` and `GoString`;
-- `log/slog` through `LogValue`;
-- `encoding.TextMarshaler`, including `encoding/json`, through `MarshalText`;
-- `encoding/xml` through `MarshalXML`.
-
-Serialization is intentionally lossy: serialized output contains the mask, not
-the original value, and should not be used to persist a recoverable secret.
-
-Because `Secret` is an opaque struct rather than a named string, ordinary code
-cannot convert, concatenate, index or slice it as a string.
-
-## Sealed marker interface
-
-`Value` identifies sensitive types owned by this module:
+Use `secret.Value` when an integration needs to recognize sensitive values:
 
 ```go
 func IsSensitive(value any) bool {
 	_, ok := value.(secret.Value)
+
 	return ok
 }
 ```
 
-The marker method is unexported, so packages outside `secret` can recognize
-implementations but cannot add their own. This lets integration libraries apply
-redaction or source policies without depending on the representation of
-`Secret`.
-
 ## Migrating from v1
 
-Update the module and import path:
+Update the module path:
 
 ```diff
 - github.com/uchaloop/secret
 + github.com/uchaloop/secret/v2
 ```
 
-Replace string-style construction:
+Use `New` instead of a string conversion:
 
 ```diff
 - password := secret.Secret(raw)
 + password := secret.New(raw)
 ```
 
-`Reveal` and `UnmarshalText` remain available. Code that converted, concatenated,
-indexed or sliced `Secret` must now call `Reveal` explicitly at the point where
-the real string is required.
+Call `Reveal` explicitly where the original string is required.
 
 ## Security scope
 
-`Secret` is designed to prevent accidental disclosure through normal application
-code. It does not protect against:
+`Secret` prevents accidental disclosure through normal formatting, logging,
+and serialization. It does not protect against:
 
-- an explicit call to `Reveal`;
-- logging or serializing the string returned by `Reveal`;
-- `unsafe` or deliberate reflection-based inspection;
-- debuggers, crash dumps or process-memory inspection;
-- copies of the original input string retained elsewhere.
+- explicit calls to `Reveal`;
+- logging the string returned by `Reveal`;
+- `unsafe`, debuggers, crash dumps, or process-memory inspection;
+- copies of the original input retained elsewhere.
 
-Treat `Secret` as a guardrail, not as secure memory.
-
-## Testing
-
-```bash
-go test ./...
-go test -race ./...
-go vet ./...
-```
+Treat it as a guardrail, not secure memory.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
