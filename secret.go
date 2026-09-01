@@ -1,11 +1,85 @@
-// Package secret provides an opaque, masked value for passwords, tokens and
-// other sensitive strings. Secret protects against accidental disclosure
-// through ordinary formatting, logging and standard serialization; the real
-// value is obtained only through an explicit Reveal call.
-//
-// The package has no external dependencies, so infrastructure libraries can use
-// Secret in source-agnostic config structs without pulling in a configuration or
-// environment-parsing stack.
+/*
+Package secret provides an opaque, masked value for passwords, tokens and other
+sensitive strings. A Secret protects against accidental disclosure through
+ordinary formatting, logging and serialization; the real value leaves the type
+only through an explicit Reveal.
+
+	password := secret.New(raw)
+
+	fmt.Println(password)                      // ****
+	slog.Info("config", "password", password)  // password=****
+
+	raw = password.Reveal()
+
+The zero value is an empty secret, ready to use: IsZero reports true and every
+representation of it is the empty string rather than a mask, so an unset value
+does not read as a set one.
+
+# What is masked
+
+A non-empty Secret renders as **** everywhere a value is rendered without being
+asked for: fmt verbs, log/slog, text and JSON, XML. An empty one renders as the
+empty string.
+
+	cfg := struct {
+		Password secret.Secret `json:"password"`
+	}{Password: secret.New("sensitive")}
+
+	data, _ := json.Marshal(cfg)  // {"password":"****"}
+
+Serialization is lossy on purpose. A Secret cannot be round-tripped through
+JSON: what comes out is the mask, so a marshalled config cannot be used to carry
+the value on. UnmarshalText, on the other hand, reads a value in - it is what
+lets an environment or text decoder populate a Secret while every outward
+representation stays masked.
+
+Format leaves the type and pointer verbs alone. %T and %p say what fmt already
+knows without going near the contents.
+
+# Reading it back
+
+Reveal returns the underlying string, and it is the only way out. That is the
+point: every real use of a secret is one greppable call, so an audit is a search
+rather than a reading. Keep what it returns scoped to the component that needs
+it, and neither log nor serialize it.
+
+Clear empties a Secret logically. It cannot guarantee that the bytes of the
+previous value are gone from process memory - Go strings are immutable and may
+have been copied - so treat it as intent, not erasure.
+
+# Recognising a secret
+
+Value is a sealed marker: the types this package owns implement it, and no other
+package can, because the marker method is unexported. An integration library
+consults it to treat a field differently without importing a notion of secrecy
+of its own:
+
+	func IsSensitive(value any) bool {
+		_, ok := value.(secret.Value)
+
+		return ok
+	}
+
+A config dumper does this to report a field as set or unset instead of printing
+what it holds.
+
+# In a config
+
+The package has no dependencies outside the standard library, so an
+infrastructure library can put a Secret in a config struct without taking on a
+configuration or environment-parsing stack:
+
+	type Config struct {
+		Password secret.Secret `env:"PASSWORD,notEmpty"`
+	}
+
+# What it does not protect against
+
+A Secret is a guardrail against disclosure by accident, not secure memory. It
+does nothing about an explicit Reveal, about logging the string Reveal returned,
+about unsafe, a debugger, a crash dump or anything else reading process memory,
+or about a copy of the original input kept somewhere else.
+*/
 package secret
 
 import (
