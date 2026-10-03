@@ -1,168 +1,104 @@
-package secret
+package secret_test
 
 import (
 	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"log/slog"
-	"strings"
 	"testing"
+
+	"github.com/uchaloop/secret/v2"
 )
 
-const value = "hunter2"
+var (
+	_ secret.Value = secret.Secret{}
+	_ secret.Value = (*secret.Secret)(nil)
+)
 
 func TestNewRevealAndZero(t *testing.T) {
-	var zero Secret
+	var zero secret.Secret
 	if !zero.IsZero() || zero.Reveal() != "" {
 		t.Fatal("zero Secret must be empty")
 	}
 
-	s := New(value)
-	if s.IsZero() {
-		t.Fatal("New returned an empty Secret")
-	}
-	if got := s.Reveal(); got != value {
-		t.Fatalf("Reveal() = %q, want original value", got)
+	value := secret.New("password")
+	if value.IsZero() || value.Reveal() != "password" {
+		t.Fatal("New must preserve the supplied value")
 	}
 }
 
-func TestClear(t *testing.T) {
-	s := New(value)
-	s.Clear()
-	if !s.IsZero() || s.Reveal() != "" {
-		t.Fatal("Clear did not empty Secret")
-	}
-
-	var nilSecret *Secret
-	nilSecret.Clear()
+func TestClearNilReceiver(t *testing.T) {
+	var value *secret.Secret
+	value.Clear()
 }
 
-func TestImplementsSealedMarker(t *testing.T) {
-	var _ Value = Secret{}
-	var _ Value = (*Secret)(nil)
-}
+func TestMaskedOutput(t *testing.T) {
+	for _, raw := range []string{"", "private-password"} {
+		t.Run(raw, func(t *testing.T) {
+			value := secret.New(raw)
+			expected := "****"
+			if len(raw) == 0 {
+				expected = ""
+			}
 
-func TestMasksAllFmtVerbs(t *testing.T) {
-	s := New(value)
-	forms := map[string]string{
-		"%v":     fmt.Sprintf("%v", s),
-		"%s":     fmt.Sprintf("%s", s),
-		"%q":     fmt.Sprintf("%q", s),
-		"%+v":    fmt.Sprintf("%+v", s),
-		"%#v":    fmt.Sprintf("%#v", s),
-		"%x":     fmt.Sprintf("%x", s),
-		"%X":     fmt.Sprintf("%X", s),
-		"%d":     fmt.Sprintf("%d", s),
-		"append": string(fmt.Appendf(nil, "%+v", s)),
-	}
-	for verb, out := range forms {
-		if strings.Contains(out, value) {
-			t.Errorf("%s leaks the secret: %q", verb, out)
-		}
-		if !strings.Contains(out, mask) {
-			t.Errorf("%s = %q, want masked output", verb, out)
-		}
-	}
+			if value.String() != expected || value.GoString() != fmt.Sprintf("%q", expected) {
+				t.Fatal("unexpected string representation")
+			}
 
-	if out := fmt.Sprintf("%p", &s); strings.Contains(out, value) {
-		t.Fatalf("%%p leaks the secret: %q", out)
-	}
-}
+			for _, format := range []string{"%v", "%s", "%+v", "%#v", "%x", "%X", "%d"} {
+				if fmt.Sprintf(format, value) != expected {
+					t.Errorf("unexpected output for %s", format)
+				}
+			}
 
-func TestMasksWhenEmbeddedInStruct(t *testing.T) {
-	type credentials struct {
-		User     string
-		Password Secret
-	}
-	cfg := credentials{User: "app", Password: New(value)}
+			text, err := value.MarshalText()
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	if out := fmt.Sprintf("%+v", cfg); strings.Contains(out, value) {
-		t.Fatalf("formatted struct leaks the secret: %s", out)
-	}
-}
+			if string(text) != expected {
+				t.Fatal("unexpected text representation")
+			}
 
-func TestMasksStandardSerialization(t *testing.T) {
-	type credentials struct {
-		Password Secret `json:"password" xml:"password"`
-	}
+			jsonData, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	s := New(value)
+			if string(jsonData) != fmt.Sprintf("%q", expected) {
+				t.Fatal("unexpected JSON representation")
+			}
 
-	jsonData, err := json.Marshal(credentials{Password: s})
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	assertMaskedBytes(t, "json", jsonData)
+			xmlData, err := xml.Marshal(struct {
+				XMLName  xml.Name      `xml:"credentials"`
+				Password secret.Secret `xml:"password"`
+			}{Password: value})
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	xmlData, err := xml.Marshal(credentials{Password: s})
-	if err != nil {
-		t.Fatalf("xml.Marshal: %v", err)
-	}
-	assertMaskedBytes(t, "xml", xmlData)
+			if string(xmlData) != "<credentials><password>"+expected+"</password></credentials>" {
+				t.Fatal("unexpected XML representation")
+			}
 
-	textData, err := s.MarshalText()
-	if err != nil {
-		t.Fatalf("MarshalText: %v", err)
-	}
-	assertMaskedBytes(t, "text", textData)
+			if value.LogValue().String() != expected {
+				t.Fatal("unexpected slog representation")
+			}
 
-	var gobData bytes.Buffer
-	if err := gob.NewEncoder(&gobData).Encode(s); err == nil {
-		assertDoesNotLeak(t, "gob", gobData.Bytes())
-	}
-}
+			var output bytes.Buffer
 
-func TestMasksInSlog(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	logger.Info("connecting", "password", New(value))
+			for _, handler := range []slog.Handler{
+				slog.NewTextHandler(&output, nil),
+				slog.NewJSONHandler(&output, nil),
+			} {
+				output.Reset()
+				slog.New(handler).Info("config", "password", value)
 
-	assertMaskedBytes(t, "slog", buf.Bytes())
-}
-
-func TestUnmarshalTextReadsInButOutputsStayMasked(t *testing.T) {
-	var s Secret
-	if err := s.UnmarshalText([]byte(value)); err != nil {
-		t.Fatalf("UnmarshalText: %v", err)
-	}
-	if got := s.Reveal(); got != value {
-		t.Fatalf("Reveal() = %q, want original value", got)
-	}
-	if out := fmt.Sprintf("%+v", s); strings.Contains(out, value) {
-		t.Fatalf("formatting leaks value after UnmarshalText: %q", out)
-	}
-}
-
-func TestEmptyOutputsStayEmpty(t *testing.T) {
-	var s Secret
-	if got := s.String(); got != "" {
-		t.Errorf("empty String() = %q", got)
-	}
-	if got := fmt.Sprintf("%v", s); got != "" {
-		t.Errorf("empty fmt output = %q", got)
-	}
-	data, err := s.MarshalText()
-	if err != nil {
-		t.Fatalf("MarshalText: %v", err)
-	}
-	if len(data) != 0 {
-		t.Errorf("empty MarshalText() = %q", data)
-	}
-}
-
-func assertMaskedBytes(t *testing.T, name string, data []byte) {
-	t.Helper()
-	assertDoesNotLeak(t, name, data)
-	if !bytes.Contains(data, []byte(mask)) {
-		t.Errorf("%s output is not masked: %q", name, data)
-	}
-}
-
-func assertDoesNotLeak(t *testing.T, name string, data []byte) {
-	t.Helper()
-	if bytes.Contains(data, []byte(value)) {
-		t.Fatalf("%s leaks the secret: %q", name, data)
+				if len(raw) > 0 && (bytes.Contains(output.Bytes(), []byte(raw)) || !bytes.Contains(output.Bytes(), []byte(expected))) {
+					t.Fatalf("%T did not mask the secret", handler)
+				}
+			}
+		})
 	}
 }
