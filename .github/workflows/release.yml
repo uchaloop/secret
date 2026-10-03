@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Trigger pkg.go.dev to index the release
         env:
-          MODULE: github.com/uchaloop/secret
+          MODULE: github.com/uchaloop/secret/v2
         run: |
           version="${GITHUB_REF_NAME}"
           curl -fsS "https://proxy.golang.org/${MODULE}/@v/${version}.info"
