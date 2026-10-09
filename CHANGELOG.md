@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add IsSensitive() marker for integrations without importing this module.
+
 Notable changes by version.
 
 ## [2.1.0]
