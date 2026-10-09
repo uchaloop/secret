@@ -140,6 +140,10 @@ func New(value string) Secret {
 
 func (Secret) isSecret() {}
 
+// IsSensitive marks Secret for integrations without a package dependency.
+// It does not reveal or change the value.
+func (Secret) IsSensitive() {}
+
 // Reveal returns the underlying value. Call it only where the real secret is
 // required, and never log or serialize the returned string.
 func (s Secret) Reveal() string {
