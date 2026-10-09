@@ -4,6 +4,8 @@ Notable changes by version.
 
 ## Unreleased
 
+Target release: **2.2.0** (Git tag `v2.2.0`; not yet released).
+
 - Add the `Secret.IsSensitive()` marker so integrations can recognize sensitive
   types through a structural interface without importing this module. Keep the
   existing `Value` interface and all masking and decoding behavior unchanged.
