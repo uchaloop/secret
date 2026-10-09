@@ -137,8 +137,7 @@ See the [Codecov action documentation](https://github.com/codecov/codecov-action
 ## Pull requests and versions
 
 Keep changes focused. Describe the problem, resulting behavior and validation.
-Update affected examples and documentation, and add a concise `Unreleased`
-entry to [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+Update affected examples and documentation, and add a concise entry under the current unreleased version to [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
 
 Compatibility includes masking, decoding, error behavior, zero values,
 comparability and copy semantics as well as exported signatures. Discuss
@@ -163,7 +162,49 @@ See [Semantic Versioning](https://semver.org/) and
 
 Never include real credentials in source, examples, fixtures, logs or reports.
 
-The planned 2.1.0 release is an explicit exception to the compatibility policy:
-it retains `/v2` while changing comparability and JSON input behavior. These
+The 2.1.0 release was an explicit exception to the compatibility policy:
+it retained `/v2` while changing comparability and JSON input behavior. These
 changes are listed in the README and changelog; this exception does not redefine
 Semantic Versioning or authorize future incompatible minor releases.
+
+## Changelog style
+
+Use the same format in confmaker, confx and secret:
+
+- Keep newest versions first. Use `## [x.y.z] - Unreleased` once the target version
+  is known, or `## [Unreleased]` before choosing it. Do not add a separate target
+  release paragraph. Version headings omit `v`; Git tags include it.
+- At publication, replace `Unreleased` with the actual release date in
+  `YYYY-MM-DD` format. Do not infer publication dates from commit dates. Preserve
+  undated historical entries when the release date cannot be verified.
+- Group entries under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
+  `Security`, in that order. Omit empty categories, even for small releases.
+- Write in English, using past-tense opening verbs such as `Added`, `Changed`,
+  `Removed` and `Fixed`. Each bullet describes one user-visible change, normally
+  in one or two sentences. Include internal work only when it explains a useful
+  result. Preserve necessary historical compatibility and retraction notes.
+- Prefix incompatible changes with `**Breaking:**` in their normal category and
+  explain the replacement or required action when applicable. Do not duplicate
+  them in a separate breaking-changes section.
+- Define heading links at the bottom of the file. An unreleased target compares
+  the last released tag with `HEAD`; a released version compares its predecessor
+  with its tag. Link the first release to its release page. Preserve explicit
+  historical exceptions for retracted or incorrectly tagged versions.
+- Separate headings, paragraphs and lists with one blank line. Wrap continuation
+  lines consistently and format API names as inline code.
+
+Example before publication:
+
+```markdown
+## [2.0.0] - Unreleased
+
+### Added
+
+- Added support for application-provided configuration engines.
+
+### Changed
+
+- **Breaking:** Renamed `EnvOption` to `LoaderOption`; update option declarations.
+
+[2.0.0]: https://github.com/uchaloop/confmaker/compare/v1.0.1...HEAD
+```
