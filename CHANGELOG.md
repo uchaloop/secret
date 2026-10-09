@@ -1,10 +1,12 @@
 # Changelog
 
+Notable changes by version.
+
 ## Unreleased
 
-- Add IsSensitive() marker for integrations without importing this module.
-
-Notable changes by version.
+- Add the `Secret.IsSensitive()` marker so integrations can recognize sensitive
+  types through a structural interface without importing this module. Keep the
+  existing `Value` interface and all masking and decoding behavior unchanged.
 
 ## [2.1.0]
 
