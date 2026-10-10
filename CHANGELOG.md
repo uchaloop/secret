@@ -4,7 +4,7 @@ All notable changes to this module are documented in this file.
 
 Entries are grouped by version and change type, with the newest version first.
 
-## [2.2.0] - Unreleased
+## [2.2.0]
 
 ### Added
 
@@ -74,7 +74,7 @@ The release date is not recorded in the existing changelog.
   support; empty secrets produce empty output.
 - Added `Reveal` for explicit access and `UnmarshalText` for input.
 
-[2.2.0]: https://github.com/uchaloop/secret/compare/v2.1.0...HEAD
+[2.2.0]: https://github.com/uchaloop/secret/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/uchaloop/secret/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/uchaloop/secret/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/uchaloop/secret/compare/v2.0.0...v2.0.1
