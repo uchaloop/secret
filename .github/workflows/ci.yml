@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, 'release/**']
   workflow_dispatch:
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
   pull_request:
     branches: [main, 'release/**']
 
@@ -28,6 +32,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
+          cache: false
 
       - name: Check formatting
         run: |

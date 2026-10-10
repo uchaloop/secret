@@ -61,7 +61,12 @@ must be synchronized with other accesses by the caller.
 
 # Recognising a secret
 
-Value is a marker with an unexported method. Other packages cannot implement
+Secret implements interface{ IsSensitive() }, allowing integrations to recognize
+sensitivity without importing this package. The method is an empty marker, not a
+predicate, and does not inspect the value. Integrations may inspect the type
+without calling it.
+
+Value remains supported as a marker with an unexported method. Other packages cannot implement
 that method directly, but can inherit it by embedding Secret or Value. It is a
 sensitivity hint for integrations, not proof of a type's origin or safe formatting:
 
@@ -139,6 +144,10 @@ func New(value string) Secret {
 }
 
 func (Secret) isSecret() {}
+
+// IsSensitive marks Secret for integrations without a package dependency.
+// It does not reveal or change the value.
+func (Secret) IsSensitive() {}
 
 // Reveal returns the underlying value. Call it only where the real secret is
 // required, and never log or serialize the returned string.

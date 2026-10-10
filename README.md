@@ -79,6 +79,17 @@ This pattern also applies to `encoding/json/v2`. Errors from an outer decoder
 may contain input details; do not log them as though they were sanitized by secret.
 Serialization remains intentionally lossy: it writes a mask, never the secret.
 
+## Sensitivity marker
+
+`Secret` implements `interface { IsSensitive() }`. Configuration and logging
+integrations can inspect this interface without importing secret. The method is
+an empty marker, not a predicate; it does not inspect or reveal the value.
+
+This marker is new on the current branch. Older releases require the integration's
+explicit sensitivity tag or recognition through the existing `secret.Value`
+interface. `Value` remains supported. Either marker is a sensitivity hint, not a
+guarantee that a custom type embedding Secret formats safely.
+
 ## What it is not
 
 A guardrail against disclosure by accident, not secure memory. It does nothing
